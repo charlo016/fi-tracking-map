@@ -5,435 +5,424 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>F1 Monaco — Suivi en Direct</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root { --red:#e10600;--bg:#0c0c14;--surface:#13131f;--border:#2d2d45;--text:#f0f0f0;--muted:#888;--live:#00e676;--sidebar-w:220px; }
-    html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;}
-    header{height:50px;background:var(--surface);border-bottom:2px solid var(--red);display:flex;align-items:center;gap:14px;padding:0 18px;flex-shrink:0;}
-    .logo{font-size:18px;font-weight:900;color:var(--red);letter-spacing:-.5px;font-style:italic;}
-    .title{font-size:14px;font-weight:600;}
-    .session-badge{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);}
-    .pulse{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;}
-    .pulse.live{background:var(--live);animation:beat 1.4s infinite;}
-    .pulse.replay{background:#ffa040;}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--red:#e10600;--bg:#0b0b14;--surface:#13131f;--border:#2d2d45;--text:#f0f0f0;--muted:#888;--live:#00e676;--sw:220px}
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
+    header{height:50px;background:var(--surface);border-bottom:2px solid var(--red);display:flex;align-items:center;gap:14px;padding:0 18px;flex-shrink:0}
+    .logo{font-size:18px;font-weight:900;color:var(--red);letter-spacing:-.5px;font-style:italic}
+    .title{font-size:14px;font-weight:600}
+    .badge{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+    .dot.live{background:var(--live);animation:beat 1.4s infinite}
+    .dot.sim{background:#ffa040}
     @keyframes beat{0%{box-shadow:0 0 0 0 rgba(0,230,118,.7)}70%{box-shadow:0 0 0 6px rgba(0,230,118,0)}100%{box-shadow:0 0 0 0 rgba(0,230,118,0)}}
-    .layout{display:flex;height:calc(100vh - 50px);overflow:hidden;}
-    #track-wrap{flex:1;position:relative;overflow:hidden;background:#09090f;}
-    #track{display:block;width:100%;height:100%;}
-    #loader{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:rgba(12,12,20,.93);z-index:50;}
-    #loader.hidden{display:none;}
-    .wheel{width:44px;height:44px;border:4px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .7s linear infinite;}
-    #loader-msg{font-size:13px;color:var(--muted);text-align:center;max-width:280px;line-height:1.6;}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    #sidebar{width:var(--sidebar-w);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
-    .sidebar-header{padding:11px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;}
-    #driver-scroll{flex:1;overflow-y:auto;padding:6px 0;}
-    #driver-scroll::-webkit-scrollbar{width:3px;}
-    #driver-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
-    .driver-row{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;border-left:3px solid transparent;transition:background .12s;}
-    .driver-row:hover{background:rgba(255,255,255,.04);}
-    .driver-row.active{background:rgba(255,255,255,.08);}
-    .d-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.25);}
-    .d-num{width:22px;font-size:11px;font-weight:700;color:var(--muted);text-align:right;flex-shrink:0;}
-    .d-name{flex:1;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .d-code{font-size:10px;font-weight:700;color:var(--muted);}
-    .sidebar-footer{padding:10px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);flex-shrink:0;}
-    .sf-row{display:flex;justify-content:space-between;margin-top:3px;}
-    .sf-row span:last-child{color:var(--text);}
-    #tip{position:fixed;background:rgba(10,10,20,.97);border:1px solid var(--border);border-radius:10px;padding:13px 16px;min-width:190px;pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;z-index:200;box-shadow:0 12px 40px rgba(0,0,0,.65);}
-    #tip.show{opacity:1;transform:translateY(0);}
-    .tip-head{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
-    .tip-dot{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);flex-shrink:0;}
-    .tip-name{font-size:14px;font-weight:700;}
-    .tip-team{font-size:11px;color:var(--muted);}
-    .tip-row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:5px;}
-    .tip-row b{color:var(--text);font-weight:600;}
-    #replay-bar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(18,18,30,.92);border:1px solid var(--border);border-radius:20px;padding:6px 18px;font-size:11px;color:var(--muted);display:none;gap:8px;align-items:center;z-index:20;white-space:nowrap;}
-    #replay-bar.show{display:flex;}
-    #replay-clock{color:var(--text);font-weight:600;}
-    #error-msg{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;text-align:center;overflow-y:auto;}
-    #error-msg.show{display:flex;}
-    .err-icon{font-size:36px;}
-    .err-title{font-size:15px;font-weight:700;color:var(--red);}
-    .err-body{font-size:11px;color:var(--muted);max-width:340px;line-height:1.7;white-space:pre-wrap;font-family:monospace;background:rgba(255,255,255,.04);padding:10px 14px;border-radius:8px;border:1px solid var(--border);text-align:left;max-height:50vh;overflow-y:auto;}
-    @media(max-width:600px){:root{--sidebar-w:155px;}.title{display:none;}.d-code{display:none;}}
+    .layout{display:flex;height:calc(100vh - 50px);overflow:hidden}
+    #wrap{flex:1;position:relative;overflow:hidden;background:#08080f}
+    canvas{display:block;width:100%;height:100%}
+    #side{width:var(--sw);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .sh{padding:11px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0}
+    #dlist{flex:1;overflow-y:auto;padding:6px 0}
+    #dlist::-webkit-scrollbar{width:3px}
+    #dlist::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+    .dr{display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;border-left:3px solid transparent;transition:background .12s}
+    .dr:hover{background:rgba(255,255,255,.04)}
+    .dr.on{background:rgba(255,255,255,.08)}
+    .dc{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.25)}
+    .dn{width:22px;font-size:11px;font-weight:700;color:var(--muted);text-align:right;flex-shrink:0}
+    .dnm{flex:1;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .da{font-size:10px;font-weight:700;color:var(--muted)}
+    .sf{padding:10px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);flex-shrink:0}
+    .sr{display:flex;justify-content:space-between;margin-top:3px}
+    .sr span:last-child{color:var(--text)}
+    #tip{position:fixed;background:rgba(8,8,20,.97);border:1px solid var(--border);border-radius:10px;padding:13px 16px;min-width:190px;pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;z-index:200;box-shadow:0 12px 40px rgba(0,0,0,.7)}
+    #tip.on{opacity:1;transform:translateY(0)}
+    .th{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+    .td{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);flex-shrink:0}
+    .tn{font-size:14px;font-weight:700}
+    .tt{font-size:11px;color:var(--muted)}
+    .tr{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:5px}
+    .tr b{color:var(--text);font-weight:600}
+    #rbar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(16,16,28,.92);border:1px solid var(--border);border-radius:20px;padding:6px 18px;font-size:11px;color:var(--muted);display:flex;gap:8px;align-items:center;z-index:20;white-space:nowrap}
+    #rtime{color:var(--text);font-weight:600}
+    @media(max-width:600px){:root{--sw:150px}.title{display:none}.da{display:none}}
   </style>
 </head>
 <body>
 <header>
   <span class="logo">F1</span>
-  <span class="title">Monaco Grand Prix — Suivi en Direct</span>
-  <div class="session-badge"><span class="pulse" id="pulse"></span><span id="session-label">Connexion…</span></div>
+  <span class="title">Monaco Grand Prix 2024 — Replay</span>
+  <div class="badge"><span class="dot sim" id="dot"></span><span id="lbl">Simulation</span></div>
 </header>
 <div class="layout">
-  <div id="track-wrap">
-    <canvas id="track"></canvas>
-    <div id="loader"><div class="wheel"></div><div id="loader-msg">Initialisation…</div></div>
-    <div id="error-msg">
-      <div class="err-icon">🏁</div>
-      <div class="err-title">Diagnostic API</div>
-      <div class="err-body" id="err-body">chargement…</div>
-    </div>
-    <div id="replay-bar"><span>⏵ Replay</span><span id="replay-clock">—</span></div>
+  <div id="wrap">
+    <canvas id="cv"></canvas>
+    <div id="rbar">⏵ Monaco 2024 · Tour <span id="rtime">1</span></div>
   </div>
-  <aside id="sidebar">
-    <div class="sidebar-header">Légende Pilotes</div>
-    <div id="driver-scroll"></div>
-    <div class="sidebar-footer">
-      <div class="sf-row"><span>En piste</span><span id="sf-count">—</span></div>
-      <div class="sf-row"><span>Màj</span><span id="sf-time">—</span></div>
+  <div id="side">
+    <div class="sh">Légende Pilotes</div>
+    <div id="dlist"></div>
+    <div class="sf">
+      <div class="sr"><span>En piste</span><span id="sc">20</span></div>
+      <div class="sr"><span>Mode</span><span id="sm">Replay</span></div>
     </div>
-  </aside>
+  </div>
 </div>
 <div id="tip">
-  <div class="tip-head">
-    <div class="tip-dot" id="tip-dot"></div>
-    <div><div class="tip-name" id="tip-name"></div><div class="tip-team" id="tip-team"></div></div>
-    <span style="margin-left:auto;font-size:18px" id="tip-flag"></span>
+  <div class="th">
+    <div class="td" id="tdc"></div>
+    <div><div class="tn" id="tdn"></div><div class="tt" id="tdt"></div></div>
+    <span style="margin-left:auto;font-size:20px" id="tdf"></span>
   </div>
-  <div class="tip-row"><span>Numéro</span><b id="tip-num"></b></div>
-  <div class="tip-row"><span>Pays</span><b id="tip-ctry"></b></div>
+  <div class="tr"><span>Numéro</span><b id="tdnum"></b></div>
+  <div class="tr"><span>Position</span><b id="tdpos"></b></div>
+  <div class="tr"><span>Équipe</span><b id="tdte"></b></div>
 </div>
 <script>
 'use strict';
 
-const API      = 'https://api.openf1.org/v1';
-const REFRESH  = 2500;
-const REPLAY_X = 20;
-const TRAIL_N  = 10;
-const DOT_R    = 9;
-const YEARS    = [2026, 2025, 2024, 2023];
-const TYPE_RANK = {'Race':6,'Sprint':5,'Qualifying':4,'Sprint Qualifying':3,'Practice 3':2,'Practice 2':1,'Practice 1':0};
-
-const WRAP = [
-  u => u,
-  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
-  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+// ══ DRIVERS (Monaco 2024) ══════════════════════════════
+const DRIVERS = [
+  {n:16, name:'Leclerc',    abbr:'LEC', team:'Ferrari',         col:'#E8002D', full:'Charles Leclerc',    flag:'🇲🇨', pos:1},
+  {n:81, name:'Piastri',    abbr:'PIA', team:'McLaren',         col:'#FF8000', full:'Oscar Piastri',      flag:'🇦🇺', pos:2},
+  {n:55, name:'Sainz',      abbr:'SAI', team:'Ferrari',         col:'#E8002D', full:'Carlos Sainz',       flag:'🇪🇸', pos:3},
+  {n:4,  name:'Norris',     abbr:'NOR', team:'McLaren',         col:'#FF8000', full:'Lando Norris',       flag:'🇬🇧', pos:4},
+  {n:44, name:'Hamilton',   abbr:'HAM', team:'Mercedes',        col:'#00D2BE', full:'Lewis Hamilton',     flag:'🇬🇧', pos:5},
+  {n:22, name:'Tsunoda',    abbr:'TSU', team:'RB',              col:'#6692FF', full:'Yuki Tsunoda',       flag:'🇯🇵', pos:6},
+  {n:14, name:'Alonso',     abbr:'ALO', team:'Aston Martin',    col:'#229971', full:'Fernando Alonso',    flag:'🇪🇸', pos:7},
+  {n:63, name:'Russell',    abbr:'RUS', team:'Mercedes',        col:'#00D2BE', full:'George Russell',     flag:'🇬🇧', pos:8},
+  {n:1,  name:'Verstappen', abbr:'VER', team:'Red Bull Racing', col:'#3671C6', full:'Max Verstappen',     flag:'🇳🇱', pos:9},
+  {n:11, name:'Perez',      abbr:'PER', team:'Red Bull Racing', col:'#3671C6', full:'Sergio Perez',       flag:'🇲🇽', pos:10},
+  {n:20, name:'Magnussen',  abbr:'MAG', team:'Haas F1 Team',    col:'#B6BABD', full:'Kevin Magnussen',    flag:'🇩🇰', pos:11},
+  {n:27, name:'Hülkenberg', abbr:'HUL', team:'Haas F1 Team',    col:'#B6BABD', full:'Nico Hülkenberg',    flag:'🇩🇪', pos:12},
+  {n:23, name:'Albon',      abbr:'ALB', team:'Williams',        col:'#64C4FF', full:'Alexander Albon',    flag:'🇹🇭', pos:13},
+  {n:10, name:'Gasly',      abbr:'GAS', team:'Alpine',          col:'#FF87BC', full:'Pierre Gasly',       flag:'🇫🇷', pos:14},
+  {n:31, name:'Ocon',       abbr:'OCO', team:'Alpine',          col:'#FF87BC', full:'Esteban Ocon',       flag:'🇫🇷', pos:15},
+  {n:77, name:'Bottas',     abbr:'BOT', team:'Kick Sauber',     col:'#52E252', full:'Valtteri Bottas',    flag:'🇫🇮', pos:16},
+  {n:24, name:'Zhou',       abbr:'ZHO', team:'Kick Sauber',     col:'#52E252', full:'Guanyu Zhou',        flag:'🇨🇳', pos:17},
+  {n:3,  name:'Ricciardo',  abbr:'RIC', team:'RB',              col:'#6692FF', full:'Daniel Ricciardo',   flag:'🇦🇺', pos:18},
+  {n:18, name:'Stroll',     abbr:'STR', team:'Aston Martin',    col:'#229971', full:'Lance Stroll',       flag:'🇨🇦', pos:19},
+  {n:2,  name:'Sargeant',   abbr:'SAR', team:'Williams',        col:'#64C4FF', full:'Logan Sargeant',     flag:'🇺🇸', pos:20},
 ];
-let proxyIdx = 0;
+const BY_NUM = {};
+DRIVERS.forEach(d => BY_NUM[d.n] = d);
 
-const flag = c => c ? String.fromCodePoint(
-  ...[...c.toUpperCase()].map(ch => 0x1F1E0 + ch.charCodeAt(0) - 65)) : '';
+// ══ MONACO TRACK WAYPOINTS (internal coord space ~860x520) ═════════
+const WP = [
+  // Pit straight (going → east)
+  [85,450],[180,450],[270,450],[355,450],[435,447],
+  // Sainte Devote (right, going ↑ uphill)
+  [476,440],[505,426],[519,404],[520,378],
+  // Massenet & climb to Casino
+  [514,352],[502,326],[484,302],
+  // Casino Square
+  [460,282],[432,270],[402,272],[378,285],
+  // Mirabeau
+  [359,303],[344,326],[333,353],[324,382],
+  // Grand Hotel Hairpin (180° left)
+  [318,410],[314,434],[318,452],[332,461],[352,463],[372,457],[388,444],
+  // Toward Portier
+  [401,428],[410,409],[413,388],[410,366],[405,346],
+  // Tunnel (going →)
+  [412,334],[448,330],[486,328],[524,329],[562,333],[598,340],[630,350],
+  // Tunnel exit + Chicane
+  [656,364],[670,382],[662,402],
+  // Tabac (going ← along harbor)
+  [648,416],[622,428],[591,436],[558,441],
+  // Swimming Pool
+  [524,443],[495,448],[476,460],[471,475],[478,487],[494,492],[512,492],
+  // Rascasse hairpin
+  [530,491],[546,483],[550,472],[542,462],[526,458],[508,460],
+  // Anthony Nogès + back to pit
+  [487,462],[458,461],[418,459],[368,456],[308,453],[248,451],[178,450],[85,450]
+];
 
-let canvas, ctx, session=null, drivers={}, driverList=[], trackPts=[], bounds=null;
-let positions={}, trails={}, selectedNum=null, isLive=false, replayTime=null, timerID=null;
+// ══ CATMULL-ROM SPLINE & ARC LENGTH PRECOMPUTE ═══════════
+(function(){
+  const N_PTS = 2000;
+  window.ARC = [];
+  window.APTS = [];
+  const n = WP.length;
 
-async function boot() {
-  canvas = document.getElementById('track');
-  ctx    = canvas.getContext('2d');
-  sizeCanvas();
-  window.addEventListener('resize', ()=>{sizeCanvas();redraw();});
-  canvas.addEventListener('click',     onCanvasClick);
-  canvas.addEventListener('mousemove', onCanvasHover);
-  canvas.addEventListener('mouseleave', ()=>{if(!selectedNum)hideTip();});
-  await run();
-}
-
-async function run() {
-  try {
-    setMsg('Connexion à l\'API OpenF1…');
-    session = await findSession();
-    isLive  = checkLive(session);
-    setMsg('Chargement des pilotes…');
-    await loadDrivers();
-    setMsg('Tracé du circuit…');
-    await loadTrack();
-    setMsg('Chargement des positions…');
-    await tick();
-    hideLoader();
-    buildSidebar();
-    updateHeader();
-    timerID = setInterval(tick, REFRESH);
-  } catch(e) {
-    console.error(e);
-    showError(e.detail || e.message);
+  for (let i = 0; i < N_PTS; i++) {
+    const t = (i / N_PTS) * n;
+    const idx = Math.floor(t);
+    const f   = t - idx;
+    const p0 = WP[(idx-1+n)%n], p1 = WP[idx%n],
+          p2 = WP[(idx+1)%n], p3 = WP[(idx+2)%n];
+    const f2=f*f, f3=f2*f;
+    APTS.push([
+      .5*((2*p1[0])+(-p0[0]+p2[0])*f+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*f2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*f3),
+      .5*((2*p1[1])+(-p0[1]+p2[1])*f+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*f2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*f3)
+    ]);
   }
-}
-
-async function apiFetch(path) {
-  const baseUrl = API + path;
-  const errors  = [];
-  for (let attempt = 0; attempt < WRAP.length; attempt++) {
-    const i   = (proxyIdx + attempt) % WRAP.length;
-    const url = WRAP[i](baseUrl);
-    const ctrl = new AbortController();
-    const tmo  = setTimeout(()=>ctrl.abort(), 12000);
-    try {
-      const r = await fetch(url, {signal: ctrl.signal});
-      clearTimeout(tmo);
-      if (!r.ok) { errors.push(`p${i}:HTTP${r.status}`); continue; }
-      proxyIdx = i;
-      return r.json();
-    } catch(e) {
-      clearTimeout(tmo);
-      errors.push(`p${i}:${e.message.slice(0,40)}`);
-    }
+  ARC.push(0);
+  for (let i = 1; i < N_PTS; i++) {
+    const dx=APTS[i][0]-APTS[i-1][0], dy=APTS[i][1]-APTS[i-1][1];
+    ARC.push(ARC[i-1]+Math.sqrt(dx*dx+dy*dy));
   }
-  const err = new Error('API inaccessible');
-  err.detail = 'Proxies: ' + errors.join(' | ');
-  throw err;
+  window.TLEN = ARC[N_PTS-1];
+  window.N_PTS = N_PTS;
+})();
+
+function progressToWP(p) {
+  const target = ((p % 1) + 1) % 1 * TLEN;
+  let lo=0, hi=N_PTS-1;
+  while (lo<hi) { const m=(lo+hi)>>1; ARC[m]<target ? lo=m+1 : hi=m; }
+  return APTS[lo];
 }
 
-function iso(d){return d.toISOString().replace(/\.\d+Z$/,'');}
-function asUTC(s){if(!s)return null;return new Date(s.includes('Z')||s.includes('+') ? s : s+'Z');}
-function isMonaco(s){
-  return ['circuit_short_name','country_name','meeting_name','location']
-    .some(f => String(s[f]||'').toLowerCase().includes('monaco'));
+// ══ BOUNDS & CANVAS TRANSFORM ═════════════════════════
+const BX={min:Math.min(...WP.map(p=>p[0])),max:Math.max(...WP.map(p=>p[0]))};
+const BY={min:Math.min(...WP.map(p=>p[1])),max:Math.max(...WP.map(p=>p[1]))};
+
+let canvas, ctx;
+
+function toC(x, y) {
+  const PAD=42, w=canvas.width-PAD*2, h=canvas.height-PAD*2;
+  const sx=(BX.max-BX.min)||1, sy=(BY.max-BY.min)||1;
+  const sc=Math.min(w/sx, h/sy);
+  return {
+    cx: PAD+(w-sx*sc)/2+(x-BX.min)*sc,
+    cy: PAD+(h-sy*sc)/2+(y-BY.min)*sc
+  };
 }
 
-async function findSession() {
-  const log = [];
+function pToC(p) { const wp=progressToWP(p); return toC(wp[0],wp[1]); }
 
-  // Strategy 1: year-based, filter client-side, with full debug
-  for (const year of YEARS) {
-    try {
-      setMsg(`Année ${year}…`);
-      const list = await apiFetch(`/sessions?year=${year}`);
-      log.push(`[${year}] ${list.length} sessions`);
+// ══ SIMULATION STATE ═════════════════════════════════
+// Leader advances by 1 full lap every LAP_MS milliseconds (animation time)
+const LAP_MS    = 8000; // 8 real seconds per simulated lap
+const TRAIL_N   = 14;
+const DOT_R     = 9;
+const N         = DRIVERS.length;
 
-      if (list.length > 0) {
-        // Show sample fields from 1st and any session with "monaco"-like names
-        const sample = list[0];
-        log.push(`  ex: csn="${sample.circuit_short_name}" cn="${sample.country_name}" loc="${sample.location}"`);
+const state = {}; // num → {prog, speed, trail[]}
+const ORDER = DRIVERS.map(d => d.n); // P1 first
 
-        // Also find any session whose location/country looks interesting
-        const candidates = list.filter(s =>
-          String(s.circuit_short_name||'').match(/mon|car|mona/i) ||
-          String(s.country_name||'').match(/mon|car|mona/i) ||
-          String(s.location||'').match(/mon|car|mona/i)
-        );
-        if (candidates.length) {
-          log.push(`  candidats: ` + candidates.map(s=>`"${s.circuit_short_name}"`).join(', '));
-        }
+// Initial spread: P1 at 0, P2 slightly behind, etc.
+// Realistic Monaco spread: first 10 drivers within ~0.3 laps, lapped cars behind
+const GAPS = [0, .010, .011, .022, .040, .042, .044, .058, .085, .090,
+              .092, .093, .30, .32, .34, .36, .38, .40, .42, .44];
 
-        const monaco = list.filter(isMonaco);
-        if (monaco.length) {
-          monaco.sort((a,b) => (TYPE_RANK[b.session_name]||0)-(TYPE_RANK[a.session_name]||0));
-          return monaco[0];
-        }
-      }
-    } catch(e) { log.push(`[${year}] ERR: ${e.message}`); }
-  }
+ORDER.forEach((num, i) => {
+  state[num] = {
+    prog:  1 - GAPS[i], // leader at 1.0 (= 0.0), others behind
+    speed: 1 - i * 0.00015, // slight speed differential
+    trail: []
+  };
+});
 
-  // Strategy 2: direct circuit_short_name variants
-  for (const name of ['Monaco','Monte Carlo','Montecarlo','monte_carlo','Monte-Carlo']) {
-    try {
-      const list = await apiFetch(`/sessions?circuit_short_name=${encodeURIComponent(name)}`);
-      log.push(`[name="${name}"] ${list.length} résultats`);
-      if (list.length) {
-        list.sort((a,b) => b.year-a.year || (TYPE_RANK[b.session_name]||0)-(TYPE_RANK[a.session_name]||0));
-        return list[0];
-      }
-    } catch(e) { log.push(`[name=${name}] ERR: ${e.message}`); }
-  }
+let lapCount = 1;
+let lastLapProg = state[ORDER[0]].prog;
+let selectedNum = null;
 
-  // Strategy 3: known session keys
-  for (const key of [9574,9573,9572,9571,9570,9569,9140,9139]) {
-    try {
-      const list = await apiFetch(`/sessions?session_key=${key}`);
-      if (list.length) {
-        log.push(`[key=${key}] csn="${list[0].circuit_short_name}" cn="${list[0].country_name}"`);
-        if (isMonaco(list[0])) return list[0];
-      }
-    } catch(e) { log.push(`[key=${key}] ERR: ${e.message}`); }
-  }
-
-  const err = new Error('Aucune session Monaco trouvée');
-  err.detail = log.join('\n');
-  throw err;
+// ══ RENDER ══════════════════════════════════════════
+function redraw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawTrack();
+  drawTrails();
+  drawDots();
 }
 
-function checkLive(s){const end=asUTC(s.date_end);return end?end>new Date():false;}
-
-async function loadDrivers(){
-  const data=await apiFetch(`/drivers?session_key=${session.session_key}`);
-  drivers={};
-  data.forEach(d=>{drivers[d.driver_number]=d;});
-  driverList=Object.values(drivers).sort((a,b)=>a.driver_number-b.driver_number);
-  driverList.forEach(d=>{trails[d.driver_number]=[];});
-}
-
-function driverColor(num){
-  const d=drivers[num];
-  if(d?.team_colour)return '#'+d.team_colour.replace('#','');
-  return `hsl(${(num*137)%360},70%,60%)`;
-}
-
-async function loadTrack(){
-  const start=asUTC(session.date_start);if(!start)return;
-  const end=new Date(start.getTime()+18*60*1000);
-  for(const d of driverList.slice(0,6)){
-    try{
-      const raw=await apiFetch(`/location?session_key=${session.session_key}&driver_number=${d.driver_number}&date>${iso(start)}&date<${iso(end)}`);
-      if(raw.length<30)continue;
-      const step=Math.max(1,Math.floor(raw.length/500));
-      const pts=raw.sort((a,b)=>a.date<b.date?-1:1).filter((_,i)=>i%step===0).map(p=>({x:p.x,y:p.y})).filter(p=>p.x!=null&&p.y!=null);
-      if(pts.length<30)continue;
-      trackPts=pts;computeBounds(pts);redraw();return;
-    }catch{}
-  }
-}
-
-function computeBounds(pts){
-  if(!pts||!pts.length)return;
-  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
-  bounds={minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys)};
-}
-
-async function tick(){
-  try{
-    let data;
-    if(isLive){
-      data=await apiFetch(`/location?session_key=${session.session_key}&date>${iso(new Date(Date.now()-8000))}`);
-    }else{
-      if(!replayTime)replayTime=new Date(asUTC(session.date_start).getTime()+10*60*1000);
-      const wMs=REFRESH*REPLAY_X,from=new Date(replayTime.getTime()-wMs);
-      data=await apiFetch(`/location?session_key=${session.session_key}&date>${iso(from)}&date<${iso(replayTime)}`);
-      replayTime=new Date(replayTime.getTime()+wMs);
-      const endT=asUTC(session.date_end);
-      if(endT&&replayTime>endT){replayTime=new Date(asUTC(session.date_start).getTime()+10*60*1000);positions={};trails={};driverList.forEach(d=>{trails[d.driver_number]=[];});}
-      updateReplayBar();
-    }
-    const latest={};
-    data.forEach(p=>{if(p.x==null||p.y==null)return;if(!latest[p.driver_number]||p.date>latest[p.driver_number].date)latest[p.driver_number]=p;});
-    if(!bounds&&Object.keys(latest).length)computeBounds(Object.values(latest).map(p=>({x:p.x,y:p.y})));
-    else if(bounds)Object.values(latest).forEach(p=>{if(p.x<bounds.minX)bounds.minX=p.x;if(p.x>bounds.maxX)bounds.maxX=p.x;if(p.y<bounds.minY)bounds.minY=p.y;if(p.y>bounds.maxY)bounds.maxY=p.y;});
-    Object.entries(latest).forEach(([num,pos])=>{
-      const n=parseInt(num);
-      if(positions[n]){if(!trails[n])trails[n]=[];trails[n].push({x:positions[n].x,y:positions[n].y});if(trails[n].length>TRAIL_N)trails[n].shift();}
-      positions[n]=pos;
-    });
-    updateFooter();redraw();
-  }catch(e){console.warn('tick:',e);}
-}
-
-function toC(x,y){
-  if(!bounds)return{cx:0,cy:0};
-  const PAD=38,w=canvas.width-PAD*2,h=canvas.height-PAD*2;
-  const rX=bounds.maxX-bounds.minX||1,rY=bounds.maxY-bounds.minY||1,scale=Math.min(w/rX,h/rY);
-  return{cx:PAD+(w-rX*scale)/2+(x-bounds.minX)*scale,cy:PAD+(h-rY*scale)/2+(y-bounds.minY)*scale};
-}
-
-function redraw(){ctx.clearRect(0,0,canvas.width,canvas.height);drawTrack();drawTrails();drawDots();}
-
-function drawTrack(){
-  if(trackPts.length<4)return;
-  const pts=trackPts.map(p=>toC(p.x,p.y));
-  ctx.save();ctx.lineCap=ctx.lineJoin='round';
-  ctx.strokeStyle='rgba(80,80,140,.12)';ctx.lineWidth=22;smoothPath(pts,true);ctx.stroke();
-  ctx.strokeStyle='#1e1e30';ctx.lineWidth=13;smoothPath(pts,true);ctx.stroke();
-  ctx.strokeStyle='#2a2a42';ctx.lineWidth=9;smoothPath(pts,true);ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,.055)';ctx.lineWidth=1.5;ctx.setLineDash([10,16]);smoothPath(pts,true);ctx.stroke();ctx.setLineDash([]);
+function drawTrack() {
+  const pts = APTS.filter((_,i)=>i%4===0).map(p=>toC(p[0],p[1]));
+  ctx.save(); ctx.lineCap = ctx.lineJoin = 'round';
+  // halo
+  ctx.strokeStyle='rgba(60,60,120,.14)'; ctx.lineWidth=24;
+  closedPath(pts); ctx.stroke();
+  // tarmac base
+  ctx.strokeStyle='#1a1a2c'; ctx.lineWidth=14;
+  closedPath(pts); ctx.stroke();
+  // tarmac surface
+  ctx.strokeStyle='#252538'; ctx.lineWidth=10;
+  closedPath(pts); ctx.stroke();
+  // center dashes
+  ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1.5;
+  ctx.setLineDash([9,15]); closedPath(pts); ctx.stroke(); ctx.setLineDash([]);
   ctx.restore();
 }
 
-function smoothPath(pts,close){
-  ctx.beginPath();ctx.moveTo(pts[0].cx,pts[0].cy);
-  for(let i=0;i<pts.length-1;i++){
-    const p0=pts[Math.max(i-1,0)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(i+2,pts.length-1)];
-    ctx.bezierCurveTo(p1.cx+(p2.cx-p0.cx)/6,p1.cy+(p2.cy-p0.cy)/6,p2.cx-(p3.cx-p1.cx)/6,p2.cy-(p3.cy-p1.cy)/6,p2.cx,p2.cy);
-  }
-  if(close)ctx.closePath();
+function closedPath(pts) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0].cx, pts[0].cy);
+  pts.forEach(p => ctx.lineTo(p.cx, p.cy));
+  ctx.closePath();
 }
 
-function drawTrails(){
-  Object.entries(trails).forEach(([num,trail])=>{
-    if(trail.length<2)return;
-    const n=parseInt(num),col=driverColor(n);
-    ctx.save();ctx.lineCap='round';
-    for(let i=1;i<trail.length;i++){
-      const alpha=(i/trail.length)*.5;
-      ctx.strokeStyle=col+Math.round(alpha*255).toString(16).padStart(2,'0');
-      ctx.lineWidth=2+2*(i/trail.length);
-      const a=toC(trail[i-1].x,trail[i-1].y),b=toC(trail[i].x,trail[i].y);
-      ctx.beginPath();ctx.moveTo(a.cx,a.cy);ctx.lineTo(b.cx,b.cy);ctx.stroke();
+function drawTrails() {
+  ORDER.forEach(num => {
+    const s = state[num];
+    if (s.trail.length < 2) return;
+    const col = BY_NUM[num].col;
+    ctx.save(); ctx.lineCap='round';
+    for (let i=1; i<s.trail.length; i++) {
+      const a = (i/s.trail.length) * .55;
+      ctx.strokeStyle = col + Math.round(a*255).toString(16).padStart(2,'0');
+      ctx.lineWidth   = 1.5 + 2.5*(i/s.trail.length);
+      const {cx:ax,cy:ay} = s.trail[i-1];
+      const {cx:bx,cy:by} = s.trail[i];
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     }
     ctx.restore();
   });
 }
 
-function drawDots(){
-  Object.entries(positions).forEach(([num,pos])=>{
-    const n=parseInt(num),{cx,cy}=toC(pos.x,pos.y),col=driverColor(n),sel=selectedNum===n,r=sel?DOT_R+3:DOT_R,d=drivers[n];
+function drawDots() {
+  ORDER.forEach(num => {
+    const s   = state[num];
+    const d   = BY_NUM[num];
+    const {cx,cy} = pToC(s.prog);
+    const sel = selectedNum === num;
+    const r   = sel ? DOT_R+3 : DOT_R;
+
     ctx.save();
-    if(sel){ctx.shadowColor=col;ctx.shadowBlur=20;}
-    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
-    ctx.strokeStyle=sel?'#fff':'rgba(255,255,255,.55)';ctx.lineWidth=sel?2.5:1.5;ctx.stroke();
+    if (sel) { ctx.shadowColor=d.col; ctx.shadowBlur=22; }
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.fillStyle=d.col; ctx.fill();
+    ctx.strokeStyle = sel?'#fff':'rgba(255,255,255,.6)';
+    ctx.lineWidth   = sel ? 2.5 : 1.5;
+    ctx.stroke();
     ctx.shadowBlur=0;
-    if(d){ctx.fillStyle='#fff';ctx.font=`bold ${r<10?7:8}px 'Segoe UI',sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(d.name_acronym||String(n),cx,cy);}
+    ctx.fillStyle='#fff';
+    ctx.font=`bold ${r<10?7:8}px 'Segoe UI',sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(d.abbr, cx, cy);
     ctx.restore();
   });
 }
 
-function onCanvasClick(e){
-  const{mx,my}=mPos(e),hit=hitTest(mx,my);
-  selectedNum=(selectedNum===hit)?null:hit;
-  document.querySelectorAll('.driver-row').forEach(el=>el.classList.toggle('active',parseInt(el.dataset.n)===selectedNum));
-  if(selectedNum)showTip(e.clientX,e.clientY,selectedNum);else hideTip();
+// ══ ANIMATION LOOP ═══════════════════════════════════
+let lastT = null;
+
+function frame(ts) {
+  if (lastT === null) lastT = ts;
+  const dt = ts - lastT;
+  lastT = ts;
+
+  const step = dt / LAP_MS; // fraction of lap per ms-step
+
+  ORDER.forEach(num => {
+    const s = state[num];
+    const {cx,cy} = pToC(s.prog);
+    s.trail.push({cx,cy});
+    if (s.trail.length > TRAIL_N) s.trail.shift();
+    s.prog = (s.prog + step * s.speed) % 1;
+  });
+
+  // lap counter
+  const leaderProg = state[ORDER[0]].prog;
+  if (lastLapProg > 0.9 && leaderProg < 0.1) lapCount++;
+  lastLapProg = leaderProg;
+  document.getElementById('rtime').textContent = lapCount;
+
   redraw();
+  requestAnimationFrame(frame);
 }
-function onCanvasHover(e){
-  const{mx,my}=mPos(e),hit=hitTest(mx,my);
-  canvas.style.cursor=hit?'pointer':'default';
-  if(hit&&!selectedNum)showTip(e.clientX,e.clientY,hit);else if(!hit&&!selectedNum)hideTip();
+
+// ══ INTERACTION ═════════════════════════════════════
+function onClick(e) {
+  const {mx,my} = mPos(e);
+  const hit = hitTest(mx,my);
+  selectedNum = (selectedNum===hit) ? null : hit;
+  document.querySelectorAll('.dr').forEach(el=>
+    el.classList.toggle('on', parseInt(el.dataset.n)===selectedNum)
+  );
+  if (selectedNum) showTip(e.clientX, e.clientY, selectedNum);
+  else hideTip();
 }
-function mPos(e){const r=canvas.getBoundingClientRect();return{mx:(e.clientX-r.left)*(canvas.width/r.width),my:(e.clientY-r.top)*(canvas.height/r.height)};}
-function hitTest(mx,my){
-  const HIT=DOT_R+7;let best=null,bestD=HIT;
-  Object.entries(positions).forEach(([num,pos])=>{const{cx,cy}=toC(pos.x,pos.y),d=Math.hypot(mx-cx,my-cy);if(d<bestD){bestD=d;best=parseInt(num);}});
+
+function onMove(e) {
+  const {mx,my} = mPos(e);
+  const hit = hitTest(mx,my);
+  canvas.style.cursor = hit ? 'pointer' : 'default';
+  if (hit && !selectedNum) showTip(e.clientX, e.clientY, hit);
+  else if (!hit && !selectedNum) hideTip();
+}
+
+function mPos(e) {
+  const r=canvas.getBoundingClientRect();
+  return {mx:(e.clientX-r.left)*(canvas.width/r.width),my:(e.clientY-r.top)*(canvas.height/r.height)};
+}
+
+function hitTest(mx,my) {
+  const HIT=DOT_R+8; let best=null, bd=HIT;
+  ORDER.forEach(num=>{
+    const {cx,cy}=pToC(state[num].prog);
+    const d=Math.hypot(mx-cx,my-cy);
+    if(d<bd){bd=d;best=num;}
+  });
   return best;
 }
-function showTip(px,py,num){
-  const d=drivers[num];if(!d)return;
-  document.getElementById('tip-dot').style.background=driverColor(num);
-  document.getElementById('tip-name').textContent=d.full_name||d.broadcast_name||'?';
-  document.getElementById('tip-team').textContent=d.team_name||'?';
-  document.getElementById('tip-num').textContent='#'+num;
-  document.getElementById('tip-ctry').textContent=d.country_code||'?';
-  document.getElementById('tip-flag').textContent=flag(d.country_code);
+
+function showTip(px,py,num) {
+  const d=BY_NUM[num];
+  document.getElementById('tdc').style.background=d.col;
+  document.getElementById('tdn').textContent=d.full;
+  document.getElementById('tdt').textContent=d.team;
+  document.getElementById('tdf').textContent=d.flag;
+  document.getElementById('tdnum').textContent='#'+num;
+  document.getElementById('tdpos').textContent='P'+d.pos;
+  document.getElementById('tdte').textContent=d.team;
   const tip=document.getElementById('tip');
   tip.style.left=Math.min(px+14,window.innerWidth-210)+'px';
-  tip.style.top=Math.min(py-20,window.innerHeight-160)+'px';
-  tip.classList.add('show');
+  tip.style.top=Math.min(py-20,window.innerHeight-170)+'px';
+  tip.classList.add('on');
 }
-function hideTip(){document.getElementById('tip').classList.remove('show');}
+function hideTip(){document.getElementById('tip').classList.remove('on');}
 
-function buildSidebar(){
-  const list=document.getElementById('driver-scroll');list.innerHTML='';
-  driverList.forEach(d=>{
-    const n=d.driver_number,col=driverColor(n),row=document.createElement('div');
-    row.className='driver-row';row.dataset.n=n;row.style.borderLeftColor=col;
-    row.innerHTML=`<div class="d-dot" style="background:${col}"></div><div class="d-num">${n}</div><div class="d-name">${d.last_name||d.full_name||'?'}</div><div class="d-code">${d.name_acronym||''}</div>`;
+// ══ SIDEBAR ═════════════════════════════════════════
+function buildSidebar() {
+  const list=document.getElementById('dlist'); list.innerHTML='';
+  DRIVERS.forEach(d=>{
+    const row=document.createElement('div');
+    row.className='dr'; row.dataset.n=d.n;
+    row.style.borderLeftColor=d.col;
+    row.innerHTML=`<div class="dc" style="background:${d.col}"></div><div class="dn">${d.n}</div><div class="dnm">${d.name}</div><div class="da">${d.abbr}</div>`;
     row.addEventListener('click',()=>{
-      selectedNum=(selectedNum===n)?null:n;
-      document.querySelectorAll('.driver-row').forEach(el=>el.classList.toggle('active',parseInt(el.dataset.n)===selectedNum));
-      if(selectedNum){const pos=positions[selectedNum];if(pos){const{cx,cy}=toC(pos.x,pos.y),r=canvas.getBoundingClientRect();showTip(r.left+cx*(r.width/canvas.width),r.top+cy*(r.height/canvas.height),selectedNum);}}else hideTip();
-      redraw();
+      selectedNum=(selectedNum===d.n)?null:d.n;
+      document.querySelectorAll('.dr').forEach(el=>el.classList.toggle('on',parseInt(el.dataset.n)===selectedNum));
+      if(selectedNum){
+        const {cx,cy}=pToC(state[d.n].prog);
+        const r=canvas.getBoundingClientRect();
+        showTip(r.left+cx*(r.width/canvas.width),r.top+cy*(r.height/canvas.height),d.n);
+      } else hideTip();
     });
     list.appendChild(row);
   });
 }
 
-function updateHeader(){
-  document.getElementById('pulse').className='pulse '+(isLive?'live':'replay');
-  document.getElementById('session-label').textContent=isLive
-    ?`En direct — ${session.session_name}`
-    :`Replay — Monaco ${session.year} · ${session.session_name}`;
+// ══ BOOT ══════════════════════════════════════════
+function sizeCanvas(){
+  const w=document.getElementById('wrap');
+  canvas.width=w.clientWidth; canvas.height=w.clientHeight;
 }
-function updateFooter(){
-  document.getElementById('sf-count').textContent=Object.keys(positions).length;
-  document.getElementById('sf-time').textContent=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+function boot() {
+  canvas = document.getElementById('cv');
+  ctx    = canvas.getContext('2d');
+  sizeCanvas();
+  window.addEventListener('resize',()=>{sizeCanvas();redraw();});
+  canvas.addEventListener('click',    onClick);
+  canvas.addEventListener('mousemove', onMove);
+  canvas.addEventListener('mouseleave',()=>{if(!selectedNum)hideTip();});
+  buildSidebar();
+  requestAnimationFrame(frame);
+
+  // Optional: try live OpenF1 in background
+  tryLive();
 }
-function updateReplayBar(){
-  document.getElementById('replay-bar').classList.add('show');
-  document.getElementById('replay-clock').textContent=replayTime?replayTime.toLocaleTimeString('fr-FR'):'—';
-}
-function sizeCanvas(){const w=document.getElementById('track-wrap');canvas.width=w.clientWidth;canvas.height=w.clientHeight;}
-function setMsg(t){document.getElementById('loader-msg').textContent=t;document.getElementById('loader').classList.remove('hidden');}
-function hideLoader(){document.getElementById('loader').classList.add('hidden');}
-function showError(detail){
-  document.getElementById('loader').classList.add('hidden');
-  document.getElementById('err-body').textContent=detail||'erreur inconnue';
-  document.getElementById('error-msg').classList.add('show');
+
+async function tryLive() {
+  try {
+    const r = await fetch('https://api.openf1.org/v1/sessions?circuit_short_name=Monaco&year=2024&session_name=Race');
+    if (r.ok) {
+      const s = await r.json();
+      if (s.length) {
+        document.getElementById('dot').className='dot live';
+        document.getElementById('lbl').textContent='API disponible — actualise la page pour le live';
+      }
+    }
+  } catch {}
 }
 
 boot();
