@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>F1 Monaco — Suivi en Direct</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red: #e10600;
+      --bg: #0c0c14;
+      --surface: #13131f;
+      --card: #1a1a2a;
+      --border: #2d2d45;
+      --text: #f0f0f0;
+      --muted: #888;
+      --live: #00e676;
+      --sidebar-w: 220px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+    }
+
+    header {
+      height: 50px;
+      background: var(--surface);
+      border-bottom: 2px solid var(--red);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 18px;
+      flex-shrink: 0;
+      z-index: 10;
+      position: relative;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--red);
+      letter-spacing: -0.5px;
+      font-style: italic;
+    }
+
+    .title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .session-badge {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .pulse {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    .pulse.live {
+      background: var(--live);
+      box-shadow: 0 0 0 0 var(--live);
+      animation: beat 1.4s infinite;
+    }
+    .pulse.replay { background: #ffa040; }
+
+    @keyframes beat {
+      0%   { box-shadow: 0 0 0 0 rgba(0,230,118,.7); }
+      70%  { box-shadow: 0 0 0 6px rgba(0,230,118,0); }
+      100% { box-shadow: 0 0 0 0 rgba(0,230,118,0); }
+    }
+
+    .layout {
+      display: flex;
+      height: calc(100vh - 50px);
+      overflow: hidden;
+    }
+
+    #track-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #09090f;
+    }
+
+    #track {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #loader {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: rgba(12,12,20,.93);
+      z-index: 50;
+    }
+    #loader.hidden { display: none; }
+
+    .wheel {
+      width: 44px; height: 44px;
+      border: 4px solid var(--border);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    #loader-msg {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      max-width: 260px;
+      line-height: 1.5;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 11px 14px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #driver-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    #driver-scroll::-webkit-scrollbar { width: 3px; }
+    #driver-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .driver-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 14px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background .12s;
+    }
+    .driver-row:hover  { background: rgba(255,255,255,.04); }
+    .driver-row.active { background: rgba(255,255,255,.08); }
+
+    .d-dot {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1.5px solid rgba(255,255,255,.25);
+    }
+
+    .d-num {
+      width: 22px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .d-name {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .d-code {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .sidebar-footer {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .sf-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 3px;
+    }
+    .sf-row span:last-child { color: var(--text); }
+
+    #tip {
+      position: fixed;
+      background: rgba(10,10,20,.97);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 16px;
+      min-width: 190px;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity .15s, transform .15s;
+      z-index: 200;
+      box-shadow: 0 12px 40px rgba(0,0,0,.65);
+    }
+    #tip.show { opacity: 1; transform: translateY(0); }
+
+    .tip-head {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 10px;
+    }
+    .tip-dot {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.4);
+      flex-shrink: 0;
+    }
+    .tip-name {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .tip-team { font-size: 11px; color: var(--muted); }
+    .tip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+    .tip-row b { color: var(--text); font-weight: 600; }
+    .tip-flag { font-size: 16px; }
+
+    #replay-bar {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(18,18,30,.92);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 18px;
+      font-size: 11px;
+      color: var(--muted);
+      display: none;
+      gap: 8px;
+      align-items: center;
+      z-index: 20;
+      white-space: nowrap;
+    }
+    #replay-bar.show { display: flex; }
+    #replay-clock { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    #error-msg {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    #error-msg.show { display: flex; }
+    .err-icon { font-size: 40px; }
+    .err-title { font-size: 16px; font-weight: 700; color: var(--red); }
+    .err-body  { font-size: 13px; color: var(--muted); max-width: 340px; line-height: 1.6; }
+
+    @media (max-width: 600px) {
+      :root { --sidebar-w: 155px; }
+      .title { display: none; }
+      .d-code { display: none; }
+      .d-name { font-size: 11px; }
+      header { gap: 10px; padding: 0 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">F1</span>
+  <span class="title">Monaco Grand Prix — Suivi en Direct</span>
+  <div class="session-badge">
+    <span class="pulse" id="pulse"></span>
+    <span id="session-label">Connexion…</span>
+  </div>
+</header>
+
+<div class="layout">
+  <div id="track-wrap">
+    <canvas id="track"></canvas>
+
+    <div id="loader">
+      <div class="wheel"></div>
+      <div id="loader-msg">Initialisation…</div>
+    </div>
+
+    <div id="error-msg">
+      <div class="err-icon">🏁</div>
+      <div class="err-title">Impossible de charger les données</div>
+      <div class="err-body" id="err-body"></div>
+    </div>
+
+    <div id="replay-bar">
+      <span>⏵ Replay</span>
+      <span id="replay-clock">—</span>
+    </div>
+  </div>
+
+  <aside id="sidebar">
+    <div class="sidebar-header">Légende Pilotes</div>
+    <div id="driver-scroll"></div>
+    <div class="sidebar-footer">
+      <div class="sf-row"><span>En piste</span><span id="sf-count">—</span></div>
+      <div class="sf-row"><span>Màj</span><span id="sf-time">—</span></div>
+    </div>
+  </aside>
+</div>
+
+<div id="tip">
+  <div class="tip-head">
+    <div class="tip-dot" id="tip-dot"></div>
+    <div>
+      <div class="tip-name" id="tip-name"></div>
+      <div class="tip-team" id="tip-team"></div>
+    </div>
+    <span class="tip-flag" id="tip-flag" style="margin-left:auto"></span>
+  </div>
+  <div class="tip-row"><span>Numéro</span><b id="tip-num"></b></div>
+  <div class="tip-row"><span>Pays</span><b id="tip-ctry"></b></div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════
+const API      = 'https://api.openf1.org/v1';
+const REFRESH  = 2500;
+const REPLAY_X = 20;   // replay vitesse x20
+const TRAIL_N  = 10;
+const DOT_R    = 9;
+const YEARS    = [2026, 2025, 2024];
+const TYPES    = ['Race','Qualifying','Practice 3','Practice 2','Practice 1'];
+
+const flag = c => c ? String.fromCodePoint(
+  ...[...c.toUpperCase()].map(ch => 0x1F1E0 + ch.charCodeAt(0) - 65)
+) : '';
+
+// ══ STATE
+let canvas, ctx;
+let session     = null;
+let drivers     = {};
+let driverList  = [];
+let trackPts    = [];
+let bounds      = null;
+let positions   = {};
+let trails      = {};
+let selectedNum = null;
+let isLive      = false;
+let replayTime  = null;
+let timerID     = null;
+
+// ══ BOOT
+async function boot() {
+  canvas = document.getElementById('track');
+  ctx    = canvas.getContext('2d');
+  sizeCanvas();
+  window.addEventListener('resize', () => { sizeCanvas(); redraw(); });
+  canvas.addEventListener('click',     onCanvasClick);
+  canvas.addEventListener('mousemove', onCanvasHover);
+  canvas.addEventListener('mouseleave', () => { if (!selectedNum) hideTip(); });
+  await run();
+}
+
+async function run() {
+  try {
+    setMsg('Recherche session Monaco…');
+    session = await findSession();
+    isLive  = checkLive(session);
+
+    setMsg('Chargement des pilotes…');
+    await loadDrivers();
+
+    setMsg('Tracé du circuit en cours…');
+    await loadTrack();
+
+    setMsg('Chargement des positions…');
+    await tick();
+
+    hideLoader();
+    buildSidebar();
+    updateHeader();
+    timerID = setInterval(tick, REFRESH);
+
+  } catch (e) {
+    console.error(e);
+    showError(e.message);
+  }
+}
+
+// ══ API
+async function apiFetch(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error('Erreur API ' + r.status + ' — ' + path.split('?')[0]);
+  return r.json();
+}
+
+function iso(d) {
+  return d.toISOString().replace(/\.\d+Z$/, '');
+}
+
+function asUTC(s) {
+  if (!s) return null;
+  return new Date(s.includes('Z') || s.includes('+') ? s : s + 'Z');
+}
+
+// ══ SESSION
+async function findSession() {
+  for (const year of YEARS) {
+    for (const type of TYPES) {
+      try {
+        const list = await apiFetch(
+          `/sessions?circuit_short_name=Monaco&year=${year}&session_name=${encodeURIComponent(type)}`
+        );
+        if (list.length) return list[list.length - 1];
+      } catch {}
+    }
+  }
+  throw new Error('Aucune session Monaco trouvée via l\'API OpenF1.');
+}
+
+function checkLive(s) {
+  const end = asUTC(s.date_end);
+  return end ? end > new Date() : false;
+}
+
+// ══ DRIVERS
+async function loadDrivers() {
+  const data = await apiFetch(`/drivers?session_key=${session.session_key}`);
+  drivers    = {};
+  data.forEach(d => { drivers[d.driver_number] = d; });
+  driverList = Object.values(drivers).sort((a, b) => a.driver_number - b.driver_number);
+  driverList.forEach(d => { trails[d.driver_number] = []; });
+}
+
+function driverColor(num) {
+  const d = drivers[num];
+  if (d?.team_colour) return '#' + d.team_colour.replace('#', '');
+  return `hsl(${(num * 137) % 360},70%,60%)`;
+}
+
+// ══ TRACK SHAPE
+async function loadTrack() {
+  const start = asUTC(session.date_start);
+  if (!start) return;
+  const end = new Date(start.getTime() + 18 * 60 * 1000);
+
+  for (const d of driverList.slice(0, 6)) {
+    try {
+      const raw = await apiFetch(
+        `/location?session_key=${session.session_key}` +
+        `&driver_number=${d.driver_number}` +
+        `&date>${iso(start)}&date<${iso(end)}`
+      );
+      if (raw.length < 30) continue;
+
+      const step = Math.max(1, Math.floor(raw.length / 500));
+      const pts  = raw
+        .sort((a, b) => (a.date < b.date ? -1 : 1))
+        .filter((_, i) => i % step === 0)
+        .map(p => ({ x: p.x, y: p.y }))
+        .filter(p => p.x != null && p.y != null);
+
+      if (pts.length < 30) continue;
+      trackPts = pts;
+      computeBounds(pts);
+      redraw();
+      return;
+    } catch {}
+  }
+}
+
+function computeBounds(pts) {
+  if (!pts || !pts.length) return;
+  const xs = pts.map(p => p.x);
+  const ys = pts.map(p => p.y);
+  bounds = {
+    minX: Math.min(...xs), maxX: Math.max(...xs),
+    minY: Math.min(...ys), maxY: Math.max(...ys),
+  };
+}
+
+// ══ POSITIONS TICK
+async function tick() {
+  try {
+    let data;
+
+    if (isLive) {
+      const since = new Date(Date.now() - 8000);
+      data = await apiFetch(
+        `/location?session_key=${session.session_key}&date>${iso(since)}`
+      );
+    } else {
+      if (!replayTime) {
+        replayTime = new Date(asUTC(session.date_start).getTime() + 10 * 60 * 1000);
+      }
+      const windowMs = REFRESH * REPLAY_X;
+      const from = new Date(replayTime.getTime() - windowMs);
+      const to   = replayTime;
+
+      data = await apiFetch(
+        `/location?session_key=${session.session_key}` +
+        `&date>${iso(from)}&date<${iso(to)}`
+      );
+
+      replayTime = new Date(replayTime.getTime() + windowMs);
+      const endT = asUTC(session.date_end);
+      if (endT && replayTime > endT) {
+        replayTime = new Date(asUTC(session.date_start).getTime() + 10 * 60 * 1000);
+        positions  = {};
+        trails     = {};
+        driverList.forEach(d => { trails[d.driver_number] = []; });
+      }
+      updateReplayBar();
+    }
+
+    // Latest point per driver
+    const latest = {};
+    data.forEach(p => {
+      if (p.x == null || p.y == null) return;
+      if (!latest[p.driver_number] || p.date > latest[p.driver_number].date)
+        latest[p.driver_number] = p;
+    });
+
+    // Expand bounds from position data if no track loaded
+    if (!bounds && Object.keys(latest).length) {
+      const pts = Object.values(latest).map(p => ({ x: p.x, y: p.y }));
+      computeBounds(pts);
+    } else if (bounds) {
+      Object.values(latest).forEach(p => {
+        if (p.x < bounds.minX) bounds.minX = p.x;
+        if (p.x > bounds.maxX) bounds.maxX = p.x;
+        if (p.y < bounds.minY) bounds.minY = p.y;
+        if (p.y > bounds.maxY) bounds.maxY = p.y;
+      });
+    }
+
+    Object.entries(latest).forEach(([num, pos]) => {
+      const n = parseInt(num);
+      if (positions[n]) {
+        if (!trails[n]) trails[n] = [];
+        trails[n].push({ x: positions[n].x, y: positions[n].y });
+        if (trails[n].length > TRAIL_N) trails[n].shift();
+      }
+      positions[n] = pos;
+    });
+
+    updateFooter();
+    redraw();
+  } catch (e) {
+    console.warn('tick error:', e);
+  }
+}
+
+// ══ COORD TRANSFORM
+function toC(x, y) {
+  if (!bounds) return { cx: 0, cy: 0 };
+  const PAD    = 38;
+  const w      = canvas.width  - PAD * 2;
+  const h      = canvas.height - PAD * 2;
+  const rangeX = bounds.maxX - bounds.minX || 1;
+  const rangeY = bounds.maxY - bounds.minY || 1;
+  const scale  = Math.min(w / rangeX, h / rangeY);
+  const offX   = PAD + (w - rangeX * scale) / 2;
+  const offY   = PAD + (h - rangeY * scale) / 2;
+  return {
+    cx: offX + (x - bounds.minX) * scale,
+    cy: offY + (y - bounds.minY) * scale,
+  };
+}
+
+// ══ DRAW
+function redraw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawTrack();
+  drawTrails();
+  drawDots();
+}
+
+function drawTrack() {
+  if (trackPts.length < 4) return;
+  const pts = trackPts.map(p => toC(p.x, p.y));
+
+  ctx.save();
+
+  // halo
+  ctx.strokeStyle = 'rgba(80,80,140,.12)';
+  ctx.lineWidth   = 22;
+  ctx.lineCap = ctx.lineJoin = 'round';
+  smoothPath(pts, true);
+  ctx.stroke();
+
+  // tarmac
+  ctx.strokeStyle = '#1e1e30';
+  ctx.lineWidth   = 13;
+  smoothPath(pts, true);
+  ctx.stroke();
+
+  // surface
+  ctx.strokeStyle = '#2a2a42';
+  ctx.lineWidth   = 9;
+  smoothPath(pts, true);
+  ctx.stroke();
+
+  // center dashes
+  ctx.strokeStyle = 'rgba(255,255,255,.055)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([10, 16]);
+  smoothPath(pts, true);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+}
+
+function smoothPath(pts, close) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0].cx, pts[0].cy);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(i - 1, 0)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(i + 2, pts.length - 1)];
+    ctx.bezierCurveTo(
+      p1.cx + (p2.cx - p0.cx) / 6,
+      p1.cy + (p2.cy - p0.cy) / 6,
+      p2.cx - (p3.cx - p1.cx) / 6,
+      p2.cy - (p3.cy - p1.cy) / 6,
+      p2.cx, p2.cy
+    );
+  }
+  if (close) ctx.closePath();
+}
+
+function drawTrails() {
+  Object.entries(trails).forEach(([num, trail]) => {
+    if (trail.length < 2) return;
+    const n   = parseInt(num);
+    const col = driverColor(n);
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const alpha = (i / trail.length) * 0.5;
+      ctx.strokeStyle = col + Math.round(alpha * 255).toString(16).padStart(2, '0');
+      ctx.lineWidth   = 2 + 2 * (i / trail.length);
+      const a = toC(trail[i-1].x, trail[i-1].y);
+      const b = toC(trail[i].x,   trail[i].y);
+      ctx.beginPath();
+      ctx.moveTo(a.cx, a.cy);
+      ctx.lineTo(b.cx, b.cy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+function drawDots() {
+  Object.entries(positions).forEach(([num, pos]) => {
+    const n   = parseInt(num);
+    const { cx, cy } = toC(pos.x, pos.y);
+    const col = driverColor(n);
+    const sel = selectedNum === n;
+    const r   = sel ? DOT_R + 3 : DOT_R;
+    const d   = drivers[n];
+
+    ctx.save();
+    if (sel) { ctx.shadowColor = col; ctx.shadowBlur = 20; }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+
+    ctx.strokeStyle = sel ? '#fff' : 'rgba(255,255,255,.55)';
+    ctx.lineWidth   = sel ? 2.5 : 1.5;
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    if (d) {
+      ctx.fillStyle    = '#fff';
+      ctx.font         = `bold ${r < 10 ? 7 : 8}px 'Segoe UI',sans-serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(d.name_acronym || String(n), cx, cy);
+    }
+    ctx.restore();
+  });
+}
+
+// ══ INTERACTION
+function onCanvasClick(e) {
+  const { mx, my } = mPos(e);
+  const hit = hitTest(mx, my);
+  selectedNum = (selectedNum === hit) ? null : hit;
+  document.querySelectorAll('.driver-row').forEach(el =>
+    el.classList.toggle('active', parseInt(el.dataset.n) === selectedNum)
+  );
+  if (selectedNum) showTip(e.clientX, e.clientY, selectedNum);
+  else             hideTip();
+  redraw();
+}
+
+function onCanvasHover(e) {
+  const { mx, my } = mPos(e);
+  const hit = hitTest(mx, my);
+  canvas.style.cursor = hit ? 'pointer' : 'default';
+  if (hit && !selectedNum) showTip(e.clientX, e.clientY, hit);
+  else if (!hit && !selectedNum) hideTip();
+}
+
+function mPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    mx: (e.clientX - rect.left) * (canvas.width  / rect.width),
+    my: (e.clientY - rect.top)  * (canvas.height / rect.height),
+  };
+}
+
+function hitTest(mx, my) {
+  const HIT = DOT_R + 7;
+  let best = null, bestD = HIT;
+  Object.entries(positions).forEach(([num, pos]) => {
+    const { cx, cy } = toC(pos.x, pos.y);
+    const d = Math.hypot(mx - cx, my - cy);
+    if (d < bestD) { bestD = d; best = parseInt(num); }
+  });
+  return best;
+}
+
+function showTip(px, py, num) {
+  const d   = drivers[num];
+  const col = driverColor(num);
+  if (!d) return;
+  document.getElementById('tip-dot').style.background = col;
+  document.getElementById('tip-name').textContent = d.full_name || d.broadcast_name || '?';
+  document.getElementById('tip-team').textContent = d.team_name || '?';
+  document.getElementById('tip-num').textContent  = '#' + num;
+  document.getElementById('tip-ctry').textContent = d.country_code || '?';
+  document.getElementById('tip-flag').textContent = flag(d.country_code);
+  const tip = document.getElementById('tip');
+  tip.style.left = Math.min(px + 14, window.innerWidth  - 210) + 'px';
+  tip.style.top  = Math.min(py - 20, window.innerHeight - 160) + 'px';
+  tip.classList.add('show');
+}
+
+function hideTip() {
+  document.getElementById('tip').classList.remove('show');
+}
+
+// ══ SIDEBAR
+function buildSidebar() {
+  const list = document.getElementById('driver-scroll');
+  list.innerHTML = '';
+  driverList.forEach(d => {
+    const n   = d.driver_number;
+    const col = driverColor(n);
+    const row = document.createElement('div');
+    row.className = 'driver-row';
+    row.dataset.n = n;
+    row.style.borderLeftColor = col;
+    row.innerHTML = `
+      <div class="d-dot" style="background:${col}"></div>
+      <div class="d-num">${n}</div>
+      <div class="d-name">${d.last_name || d.full_name || '?'}</div>
+      <div class="d-code">${d.name_acronym || ''}</div>
+    `;
+    row.addEventListener('click', () => {
+      selectedNum = (selectedNum === n) ? null : n;
+      document.querySelectorAll('.driver-row').forEach(el =>
+        el.classList.toggle('active', parseInt(el.dataset.n) === selectedNum)
+      );
+      if (selectedNum) {
+        const pos = positions[selectedNum];
+        if (pos) {
+          const { cx, cy } = toC(pos.x, pos.y);
+          const rect = canvas.getBoundingClientRect();
+          showTip(
+            rect.left + cx * (rect.width  / canvas.width),
+            rect.top  + cy * (rect.height / canvas.height),
+            selectedNum
+          );
+        }
+      } else hideTip();
+      redraw();
+    });
+    list.appendChild(row);
+  });
+}
+
+// ══ HEADER / FOOTER
+function updateHeader() {
+  document.getElementById('pulse').className = 'pulse ' + (isLive ? 'live' : 'replay');
+  document.getElementById('session-label').textContent = isLive
+    ? `En direct — ${session.session_name}`
+    : `Replay — Monaco ${session.year} · ${session.session_name}`;
+}
+
+function updateFooter() {
+  document.getElementById('sf-count').textContent = Object.keys(positions).length;
+  document.getElementById('sf-time').textContent  =
+    new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function updateReplayBar() {
+  document.getElementById('replay-bar').classList.add('show');
+  document.getElementById('replay-clock').textContent =
+    replayTime ? replayTime.toLocaleTimeString('fr-FR') : '—';
+}
+
+// ══ CANVAS SIZE
+function sizeCanvas() {
+  const wrap   = document.getElementById('track-wrap');
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+}
+
+// ══ LOADER
+function setMsg(text) {
+  document.getElementById('loader-msg').textContent = text;
+  document.getElementById('loader').classList.remove('hidden');
+}
+function hideLoader() {
+  document.getElementById('loader').classList.add('hidden');
+}
+function showError(msg) {
+  document.getElementById('loader').classList.add('hidden');
+  document.getElementById('err-body').textContent =
+    msg + '\n\nVérifie ta connexion internet. L\'API OpenF1 (openf1.org) doit être accessible.';
+  document.getElementById('error-msg').classList.add('show');
+}
+
+boot();
+</script>
+</body>
+</html>
