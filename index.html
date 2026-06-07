@@ -103,13 +103,21 @@
 <script>
 'use strict';
 
-const API     = 'https://api.openf1.org/v1';
-const REFRESH = 2500;
+const API      = 'https://api.openf1.org/v1';
+const REFRESH  = 2500;
 const REPLAY_X = 20;
 const TRAIL_N  = 10;
 const DOT_R    = 9;
 const YEARS    = [2026, 2025, 2024, 2023];
-const TYPE_RANK = { 'Race':6, 'Sprint':5, 'Qualifying':4, 'Sprint Qualifying':3, 'Practice 3':2, 'Practice 2':1, 'Practice 1':0 };
+const TYPE_RANK = { 'Race':6,'Sprint':5,'Qualifying':4,'Sprint Qualifying':3,'Practice 3':2,'Practice 2':1,'Practice 1':0 };
+
+// CORS proxy chain — tries direct first, then fallbacks
+const WRAP = [
+  u => u,
+  u => 'https://corsproxy.io/?' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+];
+let proxyIdx = 0; // remembers which one works
 
 const flag = c => c ? String.fromCodePoint(
   ...[...c.toUpperCase()].map(ch => 0x1F1E0 + ch.charCodeAt(0) - 65)) : '';
@@ -149,64 +157,78 @@ async function run() {
   }
 }
 
+// ── FETCH with proxy fallback chain ───────────────────────
 async function apiFetch(path) {
-  const r = await fetch(API + path);
-  if (!r.ok) {
-    const err = new Error('HTTP ' + r.status + ' — ' + path.slice(0,60));
-    err.detail = 'URL: ' + API + path;
-    throw err;
+  const baseUrl = API + path;
+  const errors  = [];
+
+  // Try from current known-good proxy onward, then wrap around
+  for (let attempt = 0; attempt < WRAP.length; attempt++) {
+    const i   = (proxyIdx + attempt) % WRAP.length;
+    const url = WRAP[i](baseUrl);
+    const ctrl = new AbortController();
+    const tmo  = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(tmo);
+      if (!r.ok) { errors.push(`proxy${i}: HTTP ${r.status}`); continue; }
+      proxyIdx = i; // remember this works
+      return r.json();
+    } catch(e) {
+      clearTimeout(tmo);
+      errors.push(`proxy${i}: ${e.message}`);
+    }
   }
-  return r.json();
+
+  const err = new Error('API inaccessible');
+  err.detail = errors.join('\n');
+  throw err;
 }
 
 function iso(d) { return d.toISOString().replace(/\.\d+Z$/, ''); }
 function asUTC(s) { if (!s) return null; return new Date(s.includes('Z')||s.includes('+') ? s : s+'Z'); }
 function isMonaco(s) {
-  const fields = [s.circuit_short_name, s.country_name, s.circuit_key, s.meeting_name, s.location];
-  return fields.some(f => String(f||'').toLowerCase().includes('monaco'));
+  return ['circuit_short_name','country_name','meeting_name','location']
+    .some(f => String(s[f]||'').toLowerCase().includes('monaco'));
 }
 
-// ── SESSION SEARCH (multi-strategy) ─────────────────────────────
+// ── SESSION SEARCH ──────────────────────────────────
 async function findSession() {
-  const errors = [];
-
-  // Strategy 1: fetch all sessions per year, filter client-side
+  // Strategy 1: all sessions per year, filter client-side
   for (const year of YEARS) {
     try {
-      setMsg(`Recherche session Monaco ${year}…`);
+      setMsg(`Recherche Monaco ${year}…`);
       const list = await apiFetch(`/sessions?year=${year}`);
       const monaco = list.filter(isMonaco);
       if (monaco.length) {
-        monaco.sort((a,b) => (TYPE_RANK[b.session_name]||0) - (TYPE_RANK[a.session_name]||0));
+        monaco.sort((a,b) => (TYPE_RANK[b.session_name]||0)-(TYPE_RANK[a.session_name]||0));
         return monaco[0];
       }
-    } catch(e) { errors.push('year='+year+': '+e.message); }
+    } catch {}
   }
 
-  // Strategy 2: direct circuit_short_name filter (various spellings)
-  for (const name of ['Monaco','monte_carlo','Monte Carlo','Montecarlo']) {
+  // Strategy 2: direct circuit name variants
+  for (const name of ['Monaco','Monte Carlo','Montecarlo','monte_carlo']) {
     try {
-      setMsg(`Essai circuit "${name}"…`);
+      setMsg(`Test circuit "${name}"…`);
       const list = await apiFetch(`/sessions?circuit_short_name=${encodeURIComponent(name)}`);
       if (list.length) {
-        list.sort((a,b) => b.year - a.year || (TYPE_RANK[b.session_name]||0) - (TYPE_RANK[a.session_name]||0));
+        list.sort((a,b) => b.year-a.year || (TYPE_RANK[b.session_name]||0)-(TYPE_RANK[a.session_name]||0));
         return list[0];
       }
-    } catch(e) { errors.push('name='+name+': '+e.message); }
+    } catch {}
   }
 
-  // Strategy 3: known Monaco session keys (2023 & 2024)
-  for (const key of [9574, 9573, 9572, 9571, 9570, 9140, 9139, 9138]) {
+  // Strategy 3: known Monaco session keys
+  for (const key of [9574,9573,9572,9571,9570,9569,9568,9140,9139,9138,9137]) {
     try {
-      setMsg(`Test clé session ${key}…`);
+      setMsg(`Test clé ${key}…`);
       const list = await apiFetch(`/sessions?session_key=${key}`);
       if (list.length && isMonaco(list[0])) return list[0];
-    } catch(e) { errors.push('key='+key+': '+e.message); }
+    } catch {}
   }
 
-  const err = new Error('Aucune session Monaco trouvée sur OpenF1');
-  err.detail = errors.slice(-4).join('\n');
-  throw err;
+  throw new Error('Aucune session Monaco trouvée');
 }
 
 function checkLive(s) {
@@ -218,126 +240,110 @@ async function loadDrivers() {
   const data = await apiFetch(`/drivers?session_key=${session.session_key}`);
   drivers   = {};
   data.forEach(d => { drivers[d.driver_number] = d; });
-  driverList = Object.values(drivers).sort((a,b) => a.driver_number - b.driver_number);
-  driverList.forEach(d => { trails[d.driver_number] = []; });
+  driverList = Object.values(drivers).sort((a,b)=>a.driver_number-b.driver_number);
+  driverList.forEach(d => { trails[d.driver_number]=[]; });
 }
 
 function driverColor(num) {
   const d = drivers[num];
-  if (d?.team_colour) return '#' + d.team_colour.replace('#','');
+  if (d?.team_colour) return '#'+d.team_colour.replace('#','');
   return `hsl(${(num*137)%360},70%,60%)`;
 }
 
 async function loadTrack() {
   const start = asUTC(session.date_start);
   if (!start) return;
-  const end = new Date(start.getTime() + 18*60*1000);
+  const end = new Date(start.getTime()+18*60*1000);
   for (const d of driverList.slice(0,6)) {
     try {
       const raw = await apiFetch(
-        `/location?session_key=${session.session_key}` +
-        `&driver_number=${d.driver_number}` +
-        `&date>${iso(start)}&date<${iso(end)}`
+        `/location?session_key=${session.session_key}&driver_number=${d.driver_number}&date>${iso(start)}&date<${iso(end)}`
       );
-      if (raw.length < 30) continue;
-      const step = Math.max(1, Math.floor(raw.length/500));
+      if (raw.length<30) continue;
+      const step = Math.max(1,Math.floor(raw.length/500));
       const pts  = raw
-        .sort((a,b) => a.date < b.date ? -1 : 1)
-        .filter((_,i) => i%step===0)
-        .map(p => ({x:p.x, y:p.y}))
-        .filter(p => p.x!=null && p.y!=null);
-      if (pts.length < 30) continue;
-      trackPts = pts;
-      computeBounds(pts);
-      redraw();
-      return;
+        .sort((a,b)=>a.date<b.date?-1:1)
+        .filter((_,i)=>i%step===0)
+        .map(p=>({x:p.x,y:p.y}))
+        .filter(p=>p.x!=null&&p.y!=null);
+      if (pts.length<30) continue;
+      trackPts=pts; computeBounds(pts); redraw(); return;
     } catch {}
   }
 }
 
 function computeBounds(pts) {
   if (!pts||!pts.length) return;
-  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
-  bounds = { minX:Math.min(...xs), maxX:Math.max(...xs), minY:Math.min(...ys), maxY:Math.max(...ys) };
+  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  bounds={minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys)};
 }
 
 async function tick() {
   try {
     let data;
     if (isLive) {
-      const since = new Date(Date.now()-8000);
-      data = await apiFetch(`/location?session_key=${session.session_key}&date>${iso(since)}`);
+      data = await apiFetch(`/location?session_key=${session.session_key}&date>${iso(new Date(Date.now()-8000))}`);
     } else {
-      if (!replayTime) replayTime = new Date(asUTC(session.date_start).getTime() + 10*60*1000);
-      const wMs  = REFRESH * REPLAY_X;
-      const from = new Date(replayTime.getTime() - wMs);
-      data = await apiFetch(
-        `/location?session_key=${session.session_key}&date>${iso(from)}&date<${iso(replayTime)}`
-      );
-      replayTime = new Date(replayTime.getTime() + wMs);
-      const endT = asUTC(session.date_end);
-      if (endT && replayTime > endT) {
-        replayTime = new Date(asUTC(session.date_start).getTime() + 10*60*1000);
+      if (!replayTime) replayTime=new Date(asUTC(session.date_start).getTime()+10*60*1000);
+      const wMs=REFRESH*REPLAY_X, from=new Date(replayTime.getTime()-wMs);
+      data = await apiFetch(`/location?session_key=${session.session_key}&date>${iso(from)}&date<${iso(replayTime)}`);
+      replayTime=new Date(replayTime.getTime()+wMs);
+      const endT=asUTC(session.date_end);
+      if (endT&&replayTime>endT) {
+        replayTime=new Date(asUTC(session.date_start).getTime()+10*60*1000);
         positions={}; trails={};
-        driverList.forEach(d => { trails[d.driver_number]=[]; });
+        driverList.forEach(d=>{trails[d.driver_number]=[];});
       }
       updateReplayBar();
     }
-    const latest = {};
-    data.forEach(p => {
-      if (p.x==null||p.y==null) return;
-      if (!latest[p.driver_number]||p.date>latest[p.driver_number].date) latest[p.driver_number]=p;
-    });
-    if (!bounds && Object.keys(latest).length) computeBounds(Object.values(latest).map(p=>({x:p.x,y:p.y})));
-    else if (bounds) Object.values(latest).forEach(p => {
-      if(p.x<bounds.minX)bounds.minX=p.x; if(p.x>bounds.maxX)bounds.maxX=p.x;
-      if(p.y<bounds.minY)bounds.minY=p.y; if(p.y>bounds.maxY)bounds.maxY=p.y;
-    });
-    Object.entries(latest).forEach(([num,pos]) => {
+    const latest={};
+    data.forEach(p=>{ if(p.x==null||p.y==null)return; if(!latest[p.driver_number]||p.date>latest[p.driver_number].date)latest[p.driver_number]=p; });
+    if(!bounds&&Object.keys(latest).length) computeBounds(Object.values(latest).map(p=>({x:p.x,y:p.y})));
+    else if(bounds) Object.values(latest).forEach(p=>{ if(p.x<bounds.minX)bounds.minX=p.x;if(p.x>bounds.maxX)bounds.maxX=p.x;if(p.y<bounds.minY)bounds.minY=p.y;if(p.y>bounds.maxY)bounds.maxY=p.y; });
+    Object.entries(latest).forEach(([num,pos])=>{
       const n=parseInt(num);
-      if (positions[n]) { if(!trails[n])trails[n]=[]; trails[n].push({x:positions[n].x,y:positions[n].y}); if(trails[n].length>TRAIL_N)trails[n].shift(); }
+      if(positions[n]){if(!trails[n])trails[n]=[];trails[n].push({x:positions[n].x,y:positions[n].y});if(trails[n].length>TRAIL_N)trails[n].shift();}
       positions[n]=pos;
     });
     updateFooter(); redraw();
-  } catch(e) { console.warn('tick:',e); }
+  } catch(e){console.warn('tick:',e);}
 }
 
 function toC(x,y) {
-  if (!bounds) return {cx:0,cy:0};
-  const PAD=38, w=canvas.width-PAD*2, h=canvas.height-PAD*2;
-  const rX=bounds.maxX-bounds.minX||1, rY=bounds.maxY-bounds.minY||1;
-  const scale=Math.min(w/rX,h/rY);
-  return { cx: PAD+(w-rX*scale)/2+(x-bounds.minX)*scale, cy: PAD+(h-rY*scale)/2+(y-bounds.minY)*scale };
+  if(!bounds)return{cx:0,cy:0};
+  const PAD=38,w=canvas.width-PAD*2,h=canvas.height-PAD*2;
+  const rX=bounds.maxX-bounds.minX||1,rY=bounds.maxY-bounds.minY||1,scale=Math.min(w/rX,h/rY);
+  return{cx:PAD+(w-rX*scale)/2+(x-bounds.minX)*scale,cy:PAD+(h-rY*scale)/2+(y-bounds.minY)*scale};
 }
 
-function redraw() { ctx.clearRect(0,0,canvas.width,canvas.height); drawTrack(); drawTrails(); drawDots(); }
+function redraw(){ctx.clearRect(0,0,canvas.width,canvas.height);drawTrack();drawTrails();drawDots();}
 
-function drawTrack() {
-  if (trackPts.length<4) return;
+function drawTrack(){
+  if(trackPts.length<4)return;
   const pts=trackPts.map(p=>toC(p.x,p.y));
-  ctx.save(); ctx.lineCap=ctx.lineJoin='round';
-  ctx.strokeStyle='rgba(80,80,140,.12)'; ctx.lineWidth=22; smoothPath(pts,true); ctx.stroke();
-  ctx.strokeStyle='#1e1e30'; ctx.lineWidth=13; smoothPath(pts,true); ctx.stroke();
-  ctx.strokeStyle='#2a2a42'; ctx.lineWidth=9;  smoothPath(pts,true); ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,.055)'; ctx.lineWidth=1.5; ctx.setLineDash([10,16]); smoothPath(pts,true); ctx.stroke(); ctx.setLineDash([]);
+  ctx.save();ctx.lineCap=ctx.lineJoin='round';
+  ctx.strokeStyle='rgba(80,80,140,.12)';ctx.lineWidth=22;smoothPath(pts,true);ctx.stroke();
+  ctx.strokeStyle='#1e1e30';ctx.lineWidth=13;smoothPath(pts,true);ctx.stroke();
+  ctx.strokeStyle='#2a2a42';ctx.lineWidth=9;smoothPath(pts,true);ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,.055)';ctx.lineWidth=1.5;ctx.setLineDash([10,16]);smoothPath(pts,true);ctx.stroke();ctx.setLineDash([]);
   ctx.restore();
 }
 
-function smoothPath(pts,close) {
-  ctx.beginPath(); ctx.moveTo(pts[0].cx,pts[0].cy);
-  for (let i=0;i<pts.length-1;i++) {
+function smoothPath(pts,close){
+  ctx.beginPath();ctx.moveTo(pts[0].cx,pts[0].cy);
+  for(let i=0;i<pts.length-1;i++){
     const p0=pts[Math.max(i-1,0)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(i+2,pts.length-1)];
     ctx.bezierCurveTo(p1.cx+(p2.cx-p0.cx)/6,p1.cy+(p2.cy-p0.cy)/6,p2.cx-(p3.cx-p1.cx)/6,p2.cy-(p3.cy-p1.cy)/6,p2.cx,p2.cy);
   }
-  if (close) ctx.closePath();
+  if(close)ctx.closePath();
 }
 
-function drawTrails() {
-  Object.entries(trails).forEach(([num,trail]) => {
-    if (trail.length<2) return;
-    const n=parseInt(num), col=driverColor(n);
-    ctx.save(); ctx.lineCap='round';
-    for (let i=1;i<trail.length;i++) {
+function drawTrails(){
+  Object.entries(trails).forEach(([num,trail])=>{
+    if(trail.length<2)return;
+    const n=parseInt(num),col=driverColor(n);
+    ctx.save();ctx.lineCap='round';
+    for(let i=1;i<trail.length;i++){
       const alpha=(i/trail.length)*.5;
       ctx.strokeStyle=col+Math.round(alpha*255).toString(16).padStart(2,'0');
       ctx.lineWidth=2+2*(i/trail.length);
@@ -348,11 +354,11 @@ function drawTrails() {
   });
 }
 
-function drawDots() {
-  Object.entries(positions).forEach(([num,pos]) => {
+function drawDots(){
+  Object.entries(positions).forEach(([num,pos])=>{
     const n=parseInt(num),{cx,cy}=toC(pos.x,pos.y),col=driverColor(n),sel=selectedNum===n,r=sel?DOT_R+3:DOT_R,d=drivers[n];
     ctx.save();
-    if (sel){ctx.shadowColor=col;ctx.shadowBlur=20;}
+    if(sel){ctx.shadowColor=col;ctx.shadowBlur=20;}
     ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
     ctx.strokeStyle=sel?'#fff':'rgba(255,255,255,.55)';ctx.lineWidth=sel?2.5:1.5;ctx.stroke();
     ctx.shadowBlur=0;
@@ -361,29 +367,26 @@ function drawDots() {
   });
 }
 
-function onCanvasClick(e) {
-  const {mx,my}=mPos(e),hit=hitTest(mx,my);
+function onCanvasClick(e){
+  const{mx,my}=mPos(e),hit=hitTest(mx,my);
   selectedNum=(selectedNum===hit)?null:hit;
   document.querySelectorAll('.driver-row').forEach(el=>el.classList.toggle('active',parseInt(el.dataset.n)===selectedNum));
-  if(selectedNum)showTip(e.clientX,e.clientY,selectedNum); else hideTip();
+  if(selectedNum)showTip(e.clientX,e.clientY,selectedNum);else hideTip();
   redraw();
 }
-function onCanvasHover(e) {
-  const {mx,my}=mPos(e),hit=hitTest(mx,my);
+function onCanvasHover(e){
+  const{mx,my}=mPos(e),hit=hitTest(mx,my);
   canvas.style.cursor=hit?'pointer':'default';
-  if(hit&&!selectedNum)showTip(e.clientX,e.clientY,hit); else if(!hit&&!selectedNum)hideTip();
+  if(hit&&!selectedNum)showTip(e.clientX,e.clientY,hit);else if(!hit&&!selectedNum)hideTip();
 }
-function mPos(e) {
-  const r=canvas.getBoundingClientRect();
-  return {mx:(e.clientX-r.left)*(canvas.width/r.width),my:(e.clientY-r.top)*(canvas.height/r.height)};
-}
-function hitTest(mx,my) {
-  const HIT=DOT_R+7; let best=null,bestD=HIT;
-  Object.entries(positions).forEach(([num,pos])=>{ const {cx,cy}=toC(pos.x,pos.y),d=Math.hypot(mx-cx,my-cy); if(d<bestD){bestD=d;best=parseInt(num);} });
+function mPos(e){const r=canvas.getBoundingClientRect();return{mx:(e.clientX-r.left)*(canvas.width/r.width),my:(e.clientY-r.top)*(canvas.height/r.height)};}
+function hitTest(mx,my){
+  const HIT=DOT_R+7;let best=null,bestD=HIT;
+  Object.entries(positions).forEach(([num,pos])=>{const{cx,cy}=toC(pos.x,pos.y),d=Math.hypot(mx-cx,my-cy);if(d<bestD){bestD=d;best=parseInt(num);}});
   return best;
 }
-function showTip(px,py,num) {
-  const d=drivers[num]; if(!d)return;
+function showTip(px,py,num){
+  const d=drivers[num];if(!d)return;
   document.getElementById('tip-dot').style.background=driverColor(num);
   document.getElementById('tip-name').textContent=d.full_name||d.broadcast_name||'?';
   document.getElementById('tip-team').textContent=d.team_name||'?';
@@ -397,8 +400,8 @@ function showTip(px,py,num) {
 }
 function hideTip(){document.getElementById('tip').classList.remove('show');}
 
-function buildSidebar() {
-  const list=document.getElementById('driver-scroll'); list.innerHTML='';
+function buildSidebar(){
+  const list=document.getElementById('driver-scroll');list.innerHTML='';
   driverList.forEach(d=>{
     const n=d.driver_number,col=driverColor(n),row=document.createElement('div');
     row.className='driver-row';row.dataset.n=n;row.style.borderLeftColor=col;
@@ -406,33 +409,33 @@ function buildSidebar() {
     row.addEventListener('click',()=>{
       selectedNum=(selectedNum===n)?null:n;
       document.querySelectorAll('.driver-row').forEach(el=>el.classList.toggle('active',parseInt(el.dataset.n)===selectedNum));
-      if(selectedNum){const pos=positions[selectedNum];if(pos){const {cx,cy}=toC(pos.x,pos.y),r=canvas.getBoundingClientRect();showTip(r.left+cx*(r.width/canvas.width),r.top+cy*(r.height/canvas.height),selectedNum);}}else hideTip();
+      if(selectedNum){const pos=positions[selectedNum];if(pos){const{cx,cy}=toC(pos.x,pos.y),r=canvas.getBoundingClientRect();showTip(r.left+cx*(r.width/canvas.width),r.top+cy*(r.height/canvas.height),selectedNum);}}else hideTip();
       redraw();
     });
     list.appendChild(row);
   });
 }
 
-function updateHeader() {
+function updateHeader(){
   document.getElementById('pulse').className='pulse '+(isLive?'live':'replay');
   document.getElementById('session-label').textContent=isLive
     ?`En direct — ${session.session_name}`
     :`Replay — Monaco ${session.year} · ${session.session_name}`;
 }
-function updateFooter() {
+function updateFooter(){
   document.getElementById('sf-count').textContent=Object.keys(positions).length;
   document.getElementById('sf-time').textContent=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 }
-function updateReplayBar() {
+function updateReplayBar(){
   document.getElementById('replay-bar').classList.add('show');
   document.getElementById('replay-clock').textContent=replayTime?replayTime.toLocaleTimeString('fr-FR'):'—';
 }
 function sizeCanvas(){const w=document.getElementById('track-wrap');canvas.width=w.clientWidth;canvas.height=w.clientHeight;}
-function setMsg(text){document.getElementById('loader-msg').textContent=text;document.getElementById('loader').classList.remove('hidden');}
+function setMsg(t){document.getElementById('loader-msg').textContent=t;document.getElementById('loader').classList.remove('hidden');}
 function hideLoader(){document.getElementById('loader').classList.add('hidden');}
-function showError(msg,detail) {
+function showError(msg,detail){
   document.getElementById('loader').classList.add('hidden');
-  document.getElementById('err-body').textContent=(detail?detail+'\n\n':'')+msg+'\n\nVérifie ta connexion. L\'API openf1.org doit être accessible.';
+  document.getElementById('err-body').textContent=(detail?detail+'\n\n':'')+msg;
   document.getElementById('error-msg').classList.add('show');
 }
 
